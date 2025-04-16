@@ -22,8 +22,7 @@ typings/
 # Optional eslint cache
 .eslintcache
 
-# Build output
-build/
+
 
 # dotenv environment variables file
 .env

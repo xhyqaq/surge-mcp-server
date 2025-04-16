@@ -3,9 +3,7 @@
   "version": "0.1.0",
   "description": "A Model Context Protocol server for Surge operations",
   "type": "module",
-  "bin": {
-    "mcp-surge": "./build/index.js"
-  },
+  "bin": "./build/index.js",
   "files": [
     "build"
   ],

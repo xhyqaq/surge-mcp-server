@@ -1,0 +1,46 @@
+{
+  "name": "@xhy/mcp-surge-server",
+  "version": "0.1.0",
+  "description": "A Model Context Protocol server for Surge operations",
+  "type": "module",
+  "bin": {
+    "mcp-surge": "./build/index.js"
+  },
+  "files": [
+    "build"
+  ],
+  "scripts": {
+    "build": "tsc && node -e \"require('fs').chmodSync('build/index.js', '755')\"",
+    "prepare": "npm run build",
+    "watch": "tsc --watch",
+    "inspector": "npx @modelcontextprotocol/inspector build/index.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "surge",
+    "surge.sh",
+    "deploy",
+    "claude",
+    "anthropic"
+  ],
+  "author": "xhy",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "0.6.0",
+    "dotenv": "^16.4.7",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.24",
+    "@types/node-fetch": "^2.6.12",
+    "typescript": "^5.3.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xhy/mcp-surge-server"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+} 

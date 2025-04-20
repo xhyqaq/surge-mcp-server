@@ -10,7 +10,7 @@
 ## mcp 安装
 
 ```bash
-npm -y https://github.com/xhyqaq/surge-mcp-server
+npx -y https://github.com/xhyqaq/surge-mcp-server
 ```
 
 

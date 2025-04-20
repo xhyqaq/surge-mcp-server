@@ -104,6 +104,86 @@ function spawnPromise(command: string, args: string[], options: any = {}): Promi
   });
 }
 
+// 检查命令是否存在
+async function commandExists(command: string): Promise<boolean> {
+  try {
+    const platform = os.platform();
+    const cmd = platform === 'win32' ? 'where' : 'which';
+    await execPromise(`${cmd} ${command}`);
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+// 检查并安装依赖项
+async function checkAndInstallDependencies() {
+  console.error('[Dependencies] 开始检查必要的依赖项...');
+  
+  // 检查 surge CLI
+  if (!await commandExists('surge')) {
+    console.error('[Dependencies] 未找到 surge CLI，尝试安装...');
+    try {
+      console.error('[Dependencies] 通过 npm 全局安装 surge...');
+      await spawnPromise('npm', ['install', '-g', 'surge']);
+      console.error('[Dependencies] surge CLI 安装成功');
+    } catch (error) {
+      console.error(`[Dependencies] 安装 surge CLI 失败: ${getErrorMessage(error)}`);
+      console.error('[Dependencies] 请手动安装 surge: npm install -g surge');
+    }
+  } else {
+    console.error('[Dependencies] surge CLI 已安装');
+  }
+  
+  // 检查 expect
+  if (!await commandExists('expect')) {
+    console.error('[Dependencies] 未找到 expect 命令，尝试安装...');
+    
+    try {
+      const platform = os.platform();
+      
+      if (platform === 'darwin') {
+        // macOS - 尝试使用 brew 安装
+        if (await commandExists('brew')) {
+          console.error('[Dependencies] 使用 Homebrew 安装 expect...');
+          await spawnPromise('brew', ['install', 'expect']);
+          console.error('[Dependencies] expect 安装成功');
+        } else {
+          console.error('[Dependencies] 未找到 Homebrew，无法自动安装 expect');
+          console.error('[Dependencies] 请手动安装 Homebrew，然后执行: brew install expect');
+        }
+      } else if (platform === 'linux') {
+        // Linux - 尝试使用 apt 或 yum 安装
+        if (await commandExists('apt-get')) {
+          console.error('[Dependencies] 使用 apt-get 安装 expect...');
+          await spawnPromise('sudo', ['apt-get', 'update']);
+          await spawnPromise('sudo', ['apt-get', 'install', '-y', 'expect']);
+          console.error('[Dependencies] expect 安装成功');
+        } else if (await commandExists('yum')) {
+          console.error('[Dependencies] 使用 yum 安装 expect...');
+          await spawnPromise('sudo', ['yum', 'install', '-y', 'expect']);
+          console.error('[Dependencies] expect 安装成功');
+        } else {
+          console.error('[Dependencies] 未找到支持的包管理器，无法自动安装 expect');
+          console.error('[Dependencies] 请手动安装 expect');
+        }
+      } else if (platform === 'win32') {
+        console.error('[Dependencies] Windows 系统不支持自动安装 expect');
+        console.error('[Dependencies] Windows 用户可以考虑安装 WSL 或使用替代方法');
+      } else {
+        console.error(`[Dependencies] 不支持的操作系统: ${platform}，无法自动安装 expect`);
+      }
+    } catch (error) {
+      console.error(`[Dependencies] 安装 expect 失败: ${getErrorMessage(error)}`);
+      console.error('[Dependencies] 请根据您的操作系统手动安装 expect');
+    }
+  } else {
+    console.error('[Dependencies] expect 已安装');
+  }
+  
+  console.error('[Dependencies] 依赖项检查完成');
+}
+
 // 生成随机字符串的辅助函数，用于创建随机域名
 function generateRandomString(length: number): string {
   const characters = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -309,7 +389,7 @@ expect eof
               content: [
                 {
                   type: 'text',
-                  text: `成功登录到 Surge 账户: ${args.email}`,
+                  text: `成功登录 Surge`,
                 },
               ],
             };
@@ -374,7 +454,7 @@ password ${args.password}
                 content: [
                   {
                     type: 'text',
-                    text: `成功登录到 Surge 账户: ${args.email}`,
+                    text: `成功登录到 Surge`,
                   },
                 ],
               };
@@ -493,7 +573,7 @@ password ${args.password}
             content: [
               {
                 type: 'text',
-                text: `成功部署到: https://${domain}\n\n部署信息:\n${stdout}`,
+                text: `成功部署到: https://${domain}\n`,
               },
             ],
           };
@@ -504,7 +584,7 @@ password ${args.password}
             content: [
               {
                 type: 'text',
-                text: `部署完成，请访问: https://${domain}\n\n部署输出:\n${stdout}`,
+                text: `部署完成，请访问: https://${domain}\n`,
               },
             ],
           };
@@ -536,7 +616,13 @@ password ${args.password}
 
 // 创建并运行 Surge 服务器实例
 const server = new SurgeServer();
-server.run().catch((error) => {
-  console.error(`[Fatal Error] 服务器启动失败: ${getErrorMessage(error)}`);
-  process.exit(1);
-}); 
+
+// 先检查并安装依赖，然后启动服务器
+checkAndInstallDependencies()
+  .then(() => {
+    return server.run();
+  })
+  .catch((error) => {
+    console.error(`[Fatal Error] ${getErrorMessage(error)}`);
+    process.exit(1);
+  }); 

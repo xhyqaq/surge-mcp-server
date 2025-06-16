@@ -153,7 +153,7 @@ async function checkAndInstallDependencies() {
           console.error('[Dependencies] 请手动安装 Homebrew，然后执行: brew install expect');
         }
       } else if (platform === 'linux') {
-        // Linux - 尝试使用 apt 或 yum 安装
+        // Linux - 尝试使用 apt、yum 或 apk 安装
         if (await commandExists('apt-get')) {
           console.error('[Dependencies] 使用 apt-get 安装 expect...');
           await spawnPromise('sudo', ['apt-get', 'update']);
@@ -163,9 +163,26 @@ async function checkAndInstallDependencies() {
           console.error('[Dependencies] 使用 yum 安装 expect...');
           await spawnPromise('sudo', ['yum', 'install', '-y', 'expect']);
           console.error('[Dependencies] expect 安装成功');
+        } else if (await commandExists('apk')) {
+          console.error('[Dependencies] 使用 apk 安装 expect...');
+          await spawnPromise('apk', ['add', 'expect']);
+          console.error('[Dependencies] expect 安装成功');
+        } else if (await commandExists('dnf')) {
+          console.error('[Dependencies] 使用 dnf 安装 expect...');
+          await spawnPromise('sudo', ['dnf', 'install', '-y', 'expect']);
+          console.error('[Dependencies] expect 安装成功');
+        } else if (await commandExists('zypper')) {
+          console.error('[Dependencies] 使用 zypper 安装 expect...');
+          await spawnPromise('sudo', ['zypper', 'install', '-y', 'expect']);
+          console.error('[Dependencies] expect 安装成功');
+        } else if (await commandExists('pacman')) {
+          console.error('[Dependencies] 使用 pacman 安装 expect...');
+          await spawnPromise('sudo', ['pacman', '-S', '--noconfirm', 'expect']);
+          console.error('[Dependencies] expect 安装成功');
         } else {
           console.error('[Dependencies] 未找到支持的包管理器，无法自动安装 expect');
           console.error('[Dependencies] 请手动安装 expect');
+          console.error('[Dependencies] 支持的包管理器: apt-get, yum, apk, dnf, zypper, pacman');
         }
       } else if (platform === 'win32') {
         console.error('[Dependencies] Windows 系统不支持自动安装 expect');
@@ -346,146 +363,81 @@ class SurgeServer {
         isLoggedIn: false
       };
 
-      console.error('[Login] 尝试直接登录 Surge...');
+      console.error('[Login] 尝试使用 .netrc 方法登录 Surge...');
       
-      try {
-        // Surge 不支持直接在命令行中传递凭据，使用交互方式
-        // 创建一个临时脚本来自动输入凭据
-        const tmpDir = os.tmpdir();
-        const loginScriptPath = path.join(tmpDir, `surge_login_${Date.now()}.sh`);
-        
-        // 生成自动输入凭据的 expect 脚本
-        const loginScript = `
-#!/usr/bin/expect -f
-spawn surge login
-expect "email:" { send "${args.email}\\r" }
-expect "password:" { send "${args.password}\\r" }
-expect eof
-        `.trim();
-        
-        console.error(`[Login] 创建登录脚本: ${loginScriptPath}`);
-        fs.writeFileSync(loginScriptPath, loginScript, { mode: 0o755 });
-        
-        try {
-          // 检查 expect 是否安装
-          await execPromise('which expect');
-          
-          // 执行登录脚本
-          const { stdout, stderr } = await execPromise(`${loginScriptPath}`);
-          console.error(`[Login] 登录输出:\n${stdout}`);
-          
-          if (stdout.includes('Logged in as') || stdout.includes(args.email)) {
-            this.config.isLoggedIn = true;
-            console.error('[Login] 登录成功');
-            
-            // 删除临时脚本
-            try {
-              fs.unlinkSync(loginScriptPath);
-            } catch (e) {
-              console.error(`[Login] 无法删除临时脚本: ${getErrorMessage(e)}`);
-            }
-            
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: `成功登录 Surge`,
-                },
-              ],
-            };
-          } else {
-            throw new Error(`登录响应不符合预期: ${stdout}`);
-          }
-        } catch (expectError) {
-          // expect 可能未安装，尝试另一种方法
-          console.error(`[Login] expect 执行失败: ${getErrorMessage(expectError)}`);
-          console.error('[Login] 尝试使用替代方法登录...');
-          
-          // 删除临时脚本
-          try {
-            fs.unlinkSync(loginScriptPath);
-          } catch (e) {
-            console.error(`[Login] 无法删除临时脚本: ${getErrorMessage(e)}`);
-          }
-          
-          // 保存凭据到 ~/.netrc 文件中
-          const homeDir = os.homedir();
-          const netrcPath = path.join(homeDir, '.netrc');
-          
-          // 备份原始 .netrc 文件（如果存在）
-          let originalNetrcContent = '';
-          if (fs.existsSync(netrcPath)) {
-            originalNetrcContent = fs.readFileSync(netrcPath, 'utf8');
-            const backupPath = path.join(homeDir, `.netrc.backup.${Date.now()}`);
-            fs.writeFileSync(backupPath, originalNetrcContent, { mode: 0o600 });
-            console.error(`[Login] 已备份原 .netrc 文件到 ${backupPath}`);
-          }
-          
-          // 写入 Surge 凭据
-          const netrcContent = `
+      // 优先使用 .netrc 方法，更可靠且不依赖 expect
+      const homeDir = os.homedir();
+      const netrcPath = path.join(homeDir, '.netrc');
+      
+      // 备份原始 .netrc 文件（如果存在）
+      let originalNetrcContent = '';
+      if (fs.existsSync(netrcPath)) {
+        originalNetrcContent = fs.readFileSync(netrcPath, 'utf8');
+        const backupPath = path.join(homeDir, `.netrc.backup.${Date.now()}`);
+        fs.writeFileSync(backupPath, originalNetrcContent, { mode: 0o600 });
+        console.error(`[Login] 已备份原 .netrc 文件到 ${backupPath}`);
+      }
+      
+      // 写入 Surge 凭据
+      const netrcContent = `
 machine surge.sh
 login ${args.email}
 password ${args.password}
-          `.trim();
+      `.trim();
+      
+      console.error(`[Login] 写入凭据到 ${netrcPath}`);
+      fs.writeFileSync(netrcPath, netrcContent, { mode: 0o600 });
+      
+      try {
+        // 验证登录
+        const { stdout } = await execPromise('surge whoami');
+        console.error(`[Login] whoami 响应: ${stdout.trim()}`);
+        
+        if (stdout.includes(args.email)) {
+          this.config.isLoggedIn = true;
+          console.error('[Login] 登录成功');
           
-          console.error(`[Login] 写入凭据到 ${netrcPath}`);
-          fs.writeFileSync(netrcPath, netrcContent, { mode: 0o600 });
+          // 恢复原始 .netrc 文件
+          if (originalNetrcContent) {
+            fs.writeFileSync(netrcPath, originalNetrcContent, { mode: 0o600 });
+            console.error('[Login] 已恢复原 .netrc 文件');
+          } else {
+            // 如果原来没有 .netrc 文件，则删除
+            fs.unlinkSync(netrcPath);
+            console.error('[Login] 已删除临时 .netrc 文件');
+          }
           
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `成功登录到 Surge`,
+              },
+            ],
+          };
+        } else {
+          // 恢复原始 .netrc 文件
+          if (originalNetrcContent) {
+            fs.writeFileSync(netrcPath, originalNetrcContent, { mode: 0o600 });
+          } else {
+            fs.unlinkSync(netrcPath);
+          }
+          
+          throw new Error(`登录验证失败，未找到邮箱: ${stdout}`);
+        }
+      } catch (whoamiError) {
+        // 恢复原始 .netrc 文件
+        if (originalNetrcContent) {
+          fs.writeFileSync(netrcPath, originalNetrcContent, { mode: 0o600 });
+        } else {
           try {
-            // 验证登录
-            const { stdout } = await execPromise('surge whoami');
-            console.error(`[Login] whoami 响应: ${stdout.trim()}`);
-            
-            if (stdout.includes(args.email)) {
-              this.config.isLoggedIn = true;
-              console.error('[Login] 登录成功');
-              
-              // 恢复原始 .netrc 文件
-              if (originalNetrcContent) {
-                fs.writeFileSync(netrcPath, originalNetrcContent, { mode: 0o600 });
-                console.error('[Login] 已恢复原 .netrc 文件');
-              } else {
-                // 如果原来没有 .netrc 文件，则删除
-                fs.unlinkSync(netrcPath);
-                console.error('[Login] 已删除临时 .netrc 文件');
-              }
-              
-              return {
-                content: [
-                  {
-                    type: 'text',
-                    text: `成功登录到 Surge`,
-                  },
-                ],
-              };
-            } else {
-              // 恢复原始 .netrc 文件
-              if (originalNetrcContent) {
-                fs.writeFileSync(netrcPath, originalNetrcContent, { mode: 0o600 });
-              } else {
-                fs.unlinkSync(netrcPath);
-              }
-              
-              throw new Error(`登录验证失败，未找到邮箱: ${stdout}`);
-            }
-          } catch (whoamiError) {
-            // 恢复原始 .netrc 文件
-            if (originalNetrcContent) {
-              fs.writeFileSync(netrcPath, originalNetrcContent, { mode: 0o600 });
-            } else {
-              try {
-                fs.unlinkSync(netrcPath);
-              } catch (e) {
-                // 忽略删除错误
-              }
-            }
-            
-            throw whoamiError;
+            fs.unlinkSync(netrcPath);
+          } catch (e) {
+            // 忽略删除错误
           }
         }
-      } catch (loginError) {
-        console.error(`[Login] 登录过程中出错: ${getErrorMessage(loginError)}`);
-        throw new Error(`Surge 登录失败: ${getErrorMessage(loginError)}`);
+        
+        throw new Error(`Surge 登录失败: ${getErrorMessage(whoamiError)}`);
       }
     } catch (error) {
       console.error(`[Login] 处理登录请求时发生错误: ${getErrorMessage(error)}`);

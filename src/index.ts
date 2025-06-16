@@ -378,15 +378,87 @@ class SurgeServer {
         console.error(`[Login] 已备份原 .netrc 文件到 ${backupPath}`);
       }
       
-      // 写入 Surge 凭据
-      const netrcContent = `
-machine surge.sh
-login ${args.email}
-password ${args.password}
-      `.trim();
+      // 先尝试交互式登录获取令牌
+      console.error('[Login] 尝试交互式登录获取令牌...');
       
-      console.error(`[Login] 写入凭据到 ${netrcPath}`);
-      fs.writeFileSync(netrcPath, netrcContent, { mode: 0o600 });
+      // 创建临时脚本来自动登录
+      const tmpDir = os.tmpdir();
+      const loginScriptPath = path.join(tmpDir, `surge_login_${Date.now()}.exp`);
+      
+      const expectScript = `#!/usr/bin/expect -f
+set timeout 30
+spawn surge login
+expect "email:" { send "${args.email}\\r" }
+expect "password:" { send "${args.password}\\r" }
+expect eof
+catch wait result
+exit [lindex $result 3]`;
+      
+      console.error(`[Login] 创建临时登录脚本: ${loginScriptPath}`);
+      fs.writeFileSync(loginScriptPath, expectScript, { mode: 0o755 });
+      
+      try {
+        // 检查 expect 是否可用
+        if (await commandExists('expect')) {
+          console.error('[Login] 使用 expect 进行交互式登录...');
+          const { stdout: loginOutput, stderr: loginError } = await execPromise(`expect ${loginScriptPath}`);
+          console.error(`[Login] 交互式登录输出: ${loginOutput}`);
+          
+          // 验证登录是否成功
+          const { stdout: whoamiOutput } = await execPromise('surge whoami');
+          if (whoamiOutput.includes(args.email)) {
+            console.error('[Login] 交互式登录成功');
+            
+            // 清理临时脚本
+            try {
+              fs.unlinkSync(loginScriptPath);
+            } catch (e) {
+              console.error(`[Login] 清理临时脚本失败: ${getErrorMessage(e)}`);
+            }
+            
+            this.config.isLoggedIn = true;
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: `成功登录到 Surge`,
+                },
+              ],
+            };
+          } else {
+            throw new Error(`交互式登录后验证失败: ${whoamiOutput}`);
+          }
+        } else {
+          // 如果没有 expect，使用正确的 .netrc 格式
+          console.error('[Login] expect 不可用，尝试 .netrc 方法（正确格式）...');
+          
+          // 写入正确格式的 Surge 凭据
+          const netrcContent = `machine surge.surge.sh
+    login ${args.email}
+    password ${args.password}`;
+        
+          console.error(`[Login] 写入正确格式的凭据到 ${netrcPath}`);
+          fs.writeFileSync(netrcPath, netrcContent, { mode: 0o600 });
+        }
+      } catch (expectError) {
+        console.error(`[Login] expect 登录失败: ${getErrorMessage(expectError)}`);
+        
+        // 清理临时脚本
+        try {
+          fs.unlinkSync(loginScriptPath);
+        } catch (e) {
+          // 忽略清理错误
+        }
+        
+        // 如果 expect 失败，回退到 .netrc 方法
+        console.error('[Login] 回退到 .netrc 方法...');
+        const netrcContent = `machine surge.surge.sh
+    login ${args.email}
+    password ${args.password}`;
+      
+                 console.error(`[Login] 写入 .netrc 格式凭据到 ${netrcPath}`);
+         fs.writeFileSync(netrcPath, netrcContent, { mode: 0o600 });
+       }
       
       try {
         // 验证登录
